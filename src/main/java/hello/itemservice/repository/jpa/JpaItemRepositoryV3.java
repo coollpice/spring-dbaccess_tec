@@ -1,28 +1,32 @@
 package hello.itemservice.repository.jpa;
 
+import com.querydsl.core.types.dsl.BooleanExpression;
+import com.querydsl.jpa.impl.JPAQueryFactory;
 import hello.itemservice.domain.Item;
 import hello.itemservice.repository.ItemRepository;
 import hello.itemservice.repository.ItemSearchCond;
 import hello.itemservice.repository.ItemUpdateDto;
-import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
 import javax.persistence.EntityManager;
-import javax.persistence.TypedQuery;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-@Slf4j
+import static hello.itemservice.domain.QItem.*;
+
 @Repository
 @Transactional
-@RequiredArgsConstructor
-public class JpaItemRepository implements ItemRepository {
+public class JpaItemRepositoryV3 implements ItemRepository {
 
     private final EntityManager em;
+    private final JPAQueryFactory query;
+
+    public JpaItemRepositoryV3(EntityManager em) {
+        this.em = em;
+        this.query = new JPAQueryFactory(em);
+    }
 
     @Override
     public Item save(Item item) {
@@ -40,45 +44,35 @@ public class JpaItemRepository implements ItemRepository {
 
     @Override
     public Optional<Item> findById(Long id) {
-        Item item = em.find(Item.class, id);
-        return Optional.ofNullable(item);
+        return Optional.ofNullable(em.find(Item.class, id));
     }
 
     @Override
     public List<Item> findAll(ItemSearchCond cond) {
-        String jpql = "select i from Item i";
 
         String itemName = cond.getItemName();
         Integer maxPrice = cond.getMaxPrice();
 
-        if (StringUtils.hasText(itemName) || maxPrice != null) {
-            jpql += " where";
-        }
+        // QItem.item static import
+        // where 조건에서 , 는 and 를 의미
+        return query
+                .select(item)
+                .from(item)
+                .where(likeItemName(itemName), maxPrice(maxPrice))
+                .fetch();
+    }
 
-        boolean andFlag = false;
-
+    private BooleanExpression likeItemName(String itemName) {
         if (StringUtils.hasText(itemName)) {
-            jpql += " i.itemName like concat('%', :itemName, '%')";
-            andFlag = true;
+            return item.itemName.like("%" + itemName + "%");
         }
+        return null;
+    }
 
+    private BooleanExpression maxPrice(Integer maxPrice) {
         if (maxPrice != null) {
-            if (andFlag) {
-                jpql += " and"; 
-            }
-            jpql += " i.price <= :maxPrice";
+            return item.price.loe(maxPrice);
         }
-
-        TypedQuery<Item> query = em.createQuery(jpql, Item.class);
-
-        if (StringUtils.hasText(itemName)) {
-            query.setParameter("itemName", itemName);
-        }
-
-        if (maxPrice != null) {
-            query.setParameter("maxPrice", maxPrice);
-        }
-
-        return query.getResultList();
+        return null;
     }
 }
